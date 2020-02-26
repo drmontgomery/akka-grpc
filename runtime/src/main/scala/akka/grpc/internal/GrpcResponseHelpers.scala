@@ -7,9 +7,8 @@ package akka.grpc.internal
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.annotation.InternalApi
-import akka.grpc.scaladsl.{ headers, GrpcErrorResponse, GrpcExceptionHandler }
+import akka.grpc.scaladsl.{ headers, GrpcExceptionHandler }
 import akka.grpc.{ Codec, Grpc, ProtobufSerializer }
-import akka.http.scaladsl.model.HttpEntity.LastChunk
 import akka.http.scaladsl.model.{ HttpEntity, HttpHeader, HttpResponse }
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
@@ -31,7 +30,7 @@ object GrpcResponseHelpers {
       system: ActorSystem): HttpResponse =
     GrpcResponseHelpers(e, Source.single(GrpcEntityHelpers.trailer(Status.OK)))
 
-  def apply[T](e: Source[T, NotUsed], eHandler: ActorSystem => PartialFunction[Throwable, GrpcErrorResponse])(
+  def apply[T](e: Source[T, NotUsed], eHandler: ActorSystem => PartialFunction[Throwable, List[HttpHeader]])(
       implicit m: ProtobufSerializer[T],
       mat: Materializer,
       codec: Codec,
@@ -48,7 +47,7 @@ object GrpcResponseHelpers {
   def apply[T](
       e: Source[T, NotUsed],
       status: Future[Status],
-      eHandler: ActorSystem => PartialFunction[Throwable, GrpcErrorResponse])(
+      eHandler: ActorSystem => PartialFunction[Throwable, List[HttpHeader]])(
       implicit m: ProtobufSerializer[T],
       mat: Materializer,
       codec: Codec,
@@ -63,7 +62,7 @@ object GrpcResponseHelpers {
   def apply[T](
       e: Source[T, NotUsed],
       trail: Source[HttpEntity.LastChunk, NotUsed],
-      eHandler: ActorSystem => PartialFunction[Throwable, GrpcErrorResponse] = GrpcExceptionHandler.defaultMapper)(
+      eHandler: ActorSystem => PartialFunction[Throwable, List[HttpHeader]] = GrpcExceptionHandler.defaultMapper)(
       implicit m: ProtobufSerializer[T],
       mat: Materializer,
       codec: Codec,
@@ -74,7 +73,6 @@ object GrpcResponseHelpers {
       entity = GrpcEntityHelpers(e, trail, eHandler))
   }
 
-  def status(e: GrpcErrorResponse): HttpResponse =
-    HttpResponse(entity =
-      HttpEntity.Chunked(Grpc.contentType, Source.single(GrpcEntityHelpers.trailer(e.status, e.headers))))
+  def status(headers: List[HttpHeader]): HttpResponse =
+    HttpResponse(entity = HttpEntity.Chunked(Grpc.contentType, Source.single(GrpcEntityHelpers.trailer(headers))))
 }

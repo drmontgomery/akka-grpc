@@ -19,7 +19,6 @@ import akka.stream.Materializer;
 import akka.grpc.Codec;
 import akka.grpc.Codecs;
 import akka.grpc.javadsl.GrpcMarshalling;
-import akka.grpc.javadsl.GrpcErrorResponse;
 import akka.grpc.javadsl.GrpcExceptionHandler;
 import akka.grpc.javadsl.package$;
 
@@ -51,7 +50,7 @@ import static @{service.packageName}.@{service.name}.Serializers.*;
      * Use `akka.grpc.scaladsl.ServiceHandler.concatOrNotFound` with `@{service.name}Handler.partial` when combining
      * several services.
      */
-    public static Function<HttpRequest, CompletionStage<HttpResponse>> create(@serviceName implementation, Materializer mat, Function<ActorSystem, Function<Throwable, GrpcErrorResponse>> eHandler, ActorSystem system) {
+    public static Function<HttpRequest, CompletionStage<HttpResponse>> create(@serviceName implementation, Materializer mat, Function<ActorSystem, Function<Throwable, Iterable<HttpHeader>>> eHandler, ActorSystem system) {
       return create(implementation, @{service.name}.name, mat, eHandler, system);
     }
 
@@ -77,7 +76,7 @@ import static @{service.packageName}.@{service.name}.Serializers.*;
      *
      * Registering a gRPC service under a custom prefix is not widely supported and strongly discouraged by the specification.
      */
-    public static Function<HttpRequest, CompletionStage<HttpResponse>> create(@serviceName implementation, String prefix, Materializer mat, Function<ActorSystem, Function<Throwable, GrpcErrorResponse>> eHandler, ActorSystem system) {
+    public static Function<HttpRequest, CompletionStage<HttpResponse>> create(@serviceName implementation, String prefix, Materializer mat, Function<ActorSystem, Function<Throwable, Iterable<HttpHeader>>> eHandler, ActorSystem system) {
       return partial(implementation, prefix, mat, eHandler, system);
     }
 
@@ -97,7 +96,7 @@ import static @{service.packageName}.@{service.name}.Serializers.*;
      *
      * Use `akka.grpc.javadsl.ServiceHandler.concatOrNotFound` when combining several services.
      */
-    public static Function<HttpRequest, CompletionStage<HttpResponse>> partial(@serviceName implementation, String prefix, Materializer mat, Function<ActorSystem, Function<Throwable, GrpcErrorResponse>> eHandler, ActorSystem system) {
+    public static Function<HttpRequest, CompletionStage<HttpResponse>> partial(@serviceName implementation, String prefix, Materializer mat, Function<ActorSystem, Function<Throwable, Iterable<HttpHeader>>> eHandler, ActorSystem system) {
       return (req -> {
         Iterator<String> segments = req.getUri().pathSegments().iterator();
         if (segments.hasNext() && segments.next().equals(prefix) && segments.hasNext()) {
@@ -114,7 +113,7 @@ import static @{service.packageName}.@{service.name}.Serializers.*;
         return @{service.name}.name;
       }
 
-    private static CompletionStage<HttpResponse> handle(HttpRequest request, String method, @serviceName implementation, Materializer mat, Function<ActorSystem, Function<Throwable, GrpcErrorResponse>> eHandler, ActorSystem system) {
+    private static CompletionStage<HttpResponse> handle(HttpRequest request, String method, @serviceName implementation, Materializer mat, Function<ActorSystem, Function<Throwable, Iterable<HttpHeader>>> eHandler, ActorSystem system) {
       Codec responseCodec = Codecs.negotiate(request);
       @{if(powerApis) { "Metadata metadata = new MetadataImpl(request.getHeaders());" } else { "" }}
       switch(method) {

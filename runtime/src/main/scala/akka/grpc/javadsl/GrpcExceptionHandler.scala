@@ -6,43 +6,42 @@ package akka.grpc.javadsl
 
 import java.lang.Iterable
 import java.util.concurrent.CompletionException
-import java.util.ArrayList
 
 import io.grpc.Status
 import scala.concurrent.ExecutionException
 
 import akka.actor.ActorSystem
 import akka.grpc.GrpcServiceException
-import akka.grpc.internal.MissingParameterException
+import akka.grpc.scaladsl.{ HeaderUtils => sHeaderUtils }
+import akka.grpc.internal.{ GrpcExceptionHelper, MissingParameterException }
 import akka.http.javadsl.model.{ HttpHeader, HttpResponse }
 import akka.japi.{ Function => jFunction }
 
 object GrpcExceptionHandler {
-  private val NO_HEADERS: Iterable[HttpHeader] = new ArrayList[HttpHeader]();
+  private val INVALID_ARGUMENT = HeaderUtils.statusHeaders(Status.INVALID_ARGUMENT)
+  private val INTERNAL = HeaderUtils.statusHeaders(Status.INTERNAL)
+  private val UNIMPLEMENTED = HeaderUtils.statusHeaders(Status.UNIMPLEMENTED)
 
-  private val INVALID_ARGUMENT = GrpcErrorResponse(Status.INVALID_ARGUMENT, NO_HEADERS)
-  private val INTERNAL = GrpcErrorResponse(Status.INTERNAL, NO_HEADERS)
-  private val UNIMPLEMENTED = GrpcErrorResponse(Status.UNIMPLEMENTED, NO_HEADERS)
-
-  def defaultMapper: jFunction[ActorSystem, jFunction[Throwable, GrpcErrorResponse]] =
-    new jFunction[ActorSystem, jFunction[Throwable, GrpcErrorResponse]] {
-      override def apply(system: ActorSystem): jFunction[Throwable, GrpcErrorResponse] =
+  def defaultMapper: jFunction[ActorSystem, jFunction[Throwable, Iterable[HttpHeader]]] =
+    new jFunction[ActorSystem, jFunction[Throwable, Iterable[HttpHeader]]] {
+      override def apply(system: ActorSystem): jFunction[Throwable, Iterable[HttpHeader]] =
         default(system)
     }
 
-  def default(system: ActorSystem): jFunction[Throwable, GrpcErrorResponse] =
-    new jFunction[Throwable, GrpcErrorResponse] {
-      override def apply(param: Throwable): GrpcErrorResponse = param match {
+  def default(system: ActorSystem): jFunction[Throwable, Iterable[HttpHeader]] =
+    new jFunction[Throwable, Iterable[HttpHeader]] {
+      override def apply(param: Throwable): Iterable[HttpHeader] = param match {
         case e: ExecutionException =>
           if (e.getCause == null) INTERNAL
           else default(system)(e.getCause)
         case e: CompletionException =>
           if (e.getCause == null) INTERNAL
           else default(system)(e.getCause)
-        case grpcException: GrpcServiceException => GrpcErrorResponse(grpcException.getStatus, grpcException.getHeaders)
-        case _: MissingParameterException        => INVALID_ARGUMENT
-        case _: NotImplementedError              => UNIMPLEMENTED
-        case _: UnsupportedOperationException    => UNIMPLEMENTED
+        case grpcException: GrpcServiceException =>
+          GrpcExceptionHelper.asJava(sHeaderUtils.statusHeaders(grpcException.status) ++ grpcException.headers)
+        case _: MissingParameterException     => INVALID_ARGUMENT
+        case _: NotImplementedError           => UNIMPLEMENTED
+        case _: UnsupportedOperationException => UNIMPLEMENTED
         case other =>
           system.log.error(other, "Unhandled error: [" + other.getMessage + "]")
           INTERNAL
@@ -53,7 +52,7 @@ object GrpcExceptionHandler {
 
   def standard(
       t: Throwable,
-      mapper: jFunction[ActorSystem, jFunction[Throwable, GrpcErrorResponse]],
+      mapper: jFunction[ActorSystem, jFunction[Throwable, Iterable[HttpHeader]]],
       system: ActorSystem): HttpResponse =
     GrpcMarshalling.status(mapper(system)(t))
 }

@@ -9,7 +9,7 @@ import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.annotation.InternalApi
 import akka.grpc.{ Codec, Grpc, GrpcServiceException, ProtobufSerializer }
-import akka.grpc.scaladsl.{ headers, GrpcErrorResponse, GrpcExceptionHandler }
+import akka.grpc.scaladsl.HeaderUtils
 import akka.http.scaladsl.model.HttpEntity
 import akka.http.scaladsl.model.HttpEntity.LastChunk
 import akka.http.scaladsl.model.HttpHeader
@@ -22,18 +22,18 @@ object GrpcEntityHelpers {
   def apply[T](
       e: Source[T, NotUsed],
       trail: Source[HttpEntity.LastChunk, NotUsed],
-      eHandler: ActorSystem => PartialFunction[Throwable, GrpcErrorResponse])(
+      eHandler: ActorSystem => PartialFunction[Throwable, List[HttpHeader]])(
       implicit m: ProtobufSerializer[T],
       mat: Materializer,
       codec: Codec,
       system: ActorSystem): HttpEntity.Chunked = {
     HttpEntity.Chunked(Grpc.contentType, chunks(e, trail).recover {
       case t =>
-        val e = eHandler(system).orElse[Throwable, GrpcErrorResponse] {
-          case e: GrpcServiceException => GrpcErrorResponse(e.status, e.headers)
-          case e: Exception            => GrpcErrorResponse(Status.UNKNOWN.withCause(e).withDescription("Stream failed"))
+        val headers = eHandler(system).orElse[Throwable, List[HttpHeader]] {
+          case e: GrpcServiceException => statusHeaders(e.status) ++ e.headers
+          case e: Exception            => statusHeaders(Status.UNKNOWN.withCause(e).withDescription("Stream failed"))
         }(t)
-        trailer(e.status, e.headers)
+        trailer(headers)
     })
   }
 
@@ -51,10 +51,12 @@ object GrpcEntityHelpers {
       system: ActorSystem) =
     e.map(m.serialize).via(Grpc.grpcFramingEncoder(codec)).map(bytes => HttpEntity.Chunk(bytes)).concat(trail)
 
-  def trailer(status: Status, headers: List[HttpHeader] = Nil): LastChunk =
-    LastChunk(trailer = statusHeaders(status) ++ headers)
+  def trailer(status: Status): LastChunk =
+    trailer(statusHeaders(status))
+
+  def trailer(headers: List[HttpHeader]): LastChunk =
+    LastChunk(trailer = headers)
 
   def statusHeaders(status: Status): List[HttpHeader] =
-    List(headers.`Status`(status.getCode.value.toString)) ++ Option(status.getDescription).map(d =>
-      headers.`Status-Message`(d))
+    HeaderUtils.statusHeaders(status)
 }
